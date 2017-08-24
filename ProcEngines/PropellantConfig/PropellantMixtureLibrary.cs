@@ -24,25 +24,38 @@ using System.Collections.Generic;
 using UnityEngine;
 using KSP;
 
-namespace ProcEngines
+namespace ProcEngines.PropellantConfig
 {
-    [KSPAddon(KSPAddon.Startup.MainMenu, true)]
-    class PropellantMixtureLibrary : MonoBehaviour
+    class PropellantMixtureLibrary
     {
-        public static PropellantMixtureLibrary Instance;
+        static PropellantMixtureLibrary instance;
+        public static PropellantMixtureLibrary Instance
+        {
+            get
+            {
+                if (instance == null)
+                    instance = new PropellantMixtureLibrary();
+                return instance;
+            }
+        }
         List<BiPropellantConfig> biPropConfigs;
+
         public static List<BiPropellantConfig> BiPropConfigs
         {
             get { return Instance.biPropConfigs; }
         }
 
+        Dictionary<PartResourceDefinition, PropellantProperties> auxPropellantProperties;
+
+        public static Dictionary<PartResourceDefinition, PropellantProperties> AuxPropellantProperties
+        {
+            get { return Instance.auxPropellantProperties; }
+        }
+
         //TODO: support monoprops, perhaps triprops
 
-        void Awake()
+        PropellantMixtureLibrary()
         {
-            DontDestroyOnLoad(this);
-            this.enabled = false;
-            Instance = this;
             LoadMixtures();
         }
 
@@ -55,8 +68,23 @@ namespace ProcEngines
             for(int i = 0; i < biPropNodes.Length; ++i)
             {
                 ConfigNode node = biPropNodes[i];
-                if(BiPropellantConfig.CheckConfigResourcesExist(node))
-                    biPropConfigs[i] = new BiPropellantConfig(node);
+                if (BiPropellantConfig.CheckConfigResourcesExist(node))
+                    biPropConfigs.Add(new BiPropellantConfig(node));
+            }
+
+            ConfigNode[] propellantAuxProperties = GameDatabase.Instance.GetConfigNodes("ProcEngPropAuxProperties");
+            auxPropellantProperties = new Dictionary<PartResourceDefinition, PropellantProperties>();
+
+            for (int i = 0; i < propellantAuxProperties.Length; ++i)
+            {
+                ConfigNode node = propellantAuxProperties[i];
+                PartResourceDefinition res = null;
+                if (PropellantProperties.CheckConfigResourcesExist(node, out res))
+                {
+                    PropellantProperties properties = new PropellantProperties(node, res);
+                    auxPropellantProperties.Add(res, properties);
+                }
+
             }
         }
 
@@ -70,6 +98,8 @@ namespace ProcEngines
                 if (config.MixtureTitle == mixtureTitle)
                     return config;
             }
+            Debug.LogError("[ProcEngines] Error; propellant mixture " + mixtureTitle + " could not be found");
+
             return null;
         }
     }

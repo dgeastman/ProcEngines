@@ -23,10 +23,12 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace ProcEngines
+namespace ProcEngines.PropellantConfig
 {
     public class BiPropMixtureRatioData
     {
+        const double GAS_CONSTANT = 8314.459848;
+
         string mixtureName;
         double oFRatio;
         public double OFRatio
@@ -37,6 +39,14 @@ namespace ProcEngines
 
         double minChamPres;
         double maxChamPres;
+        public double MinChamPres
+        {
+            get { return minChamPres; }
+        }
+        public double MaxChamPres
+        {
+            get { return maxChamPres; }
+        }
 
         double[] chamberPresMPaData;
         double[] chamberTempKData;
@@ -45,73 +55,114 @@ namespace ProcEngines
         double[] nozzleMolWeightgMolData;
         double[] nozzleGammaData;
         double[] nozzleMachData;
+        double[] chamberCpData;
+        double[] nozzleCpData;
+        double frozenAreaRatio;
 
-        public BiPropMixtureRatioData(ConfigNode mixtureRatioNode, string mixtureName)
+        public BiPropMixtureRatioData(ConfigNode mixtureRatioNode, string mixtureName, double frozenAreaRatio)
         {
             this.mixtureName = mixtureName;
 
-            this.oFRatio = double.Parse(mixtureRatioNode.GetValue("OFRatio"));
+            this.oFRatio = double.Parse(mixtureRatioNode.GetValue("OFratio"));
             ConfigNode pressureNode = mixtureRatioNode.GetNode("PressureData");
 
             string[] pressureNodeKeys = pressureNode.GetValues("key");
 
             this.chamberPresMPaData = new double[pressureNodeKeys.Length];
             this.chamberTempKData = new double[pressureNodeKeys.Length];
+
             this.nozzlePresMPaData = new double[pressureNodeKeys.Length];
             this.nozzleTempKData = new double[pressureNodeKeys.Length];
             this.nozzleMolWeightgMolData = new double[pressureNodeKeys.Length];
             this.nozzleGammaData = new double[pressureNodeKeys.Length];
             this.nozzleMachData = new double[pressureNodeKeys.Length];
 
+            this.chamberCpData = new double[pressureNodeKeys.Length];
+            this.nozzleCpData = new double[pressureNodeKeys.Length];
+
+            this.frozenAreaRatio = frozenAreaRatio;
+
             for (int i = 0; i < pressureNodeKeys.Length; ++i)
             {
                 string[] splitSection = pressureNodeKeys[i].Split(new char[] { ',', ' ', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries);
 
-                if (splitSection.Length != 7)
-                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O//F " + oFRatio + " is incomplete//has too many entries");
+                bool hasCpData = false;
+
+                if (splitSection.Length == 7)
+                {
+                    hasCpData = false;
+                    Debug.Log("[ProcEngines] Row " + i + " for " + mixtureName + " at O/F " + oFRatio + " has no Cp data; generating entries using ideal gas assumptions");
+                }
+                else if (splitSection.Length == 9)
+                {
+                    hasCpData = true;
+                }
+                else
+                {
+                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O/F " + oFRatio + " is incomplete//has too many entries");
+                }
 
                 double tmpVal;
                 //Chamber Pressure
                 if (double.TryParse(splitSection[0], out tmpVal))
                     chamberPresMPaData[i] = tmpVal;
                 else
-                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O//F " + oFRatio + " chamber pres could not be parsed as double; string is " + splitSection[0]);
+                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O/F " + oFRatio + " chamber pres could not be parsed as double; string is " + splitSection[0]);
 
                 //Chamber Temperature
                 if (double.TryParse(splitSection[1], out tmpVal))
                     chamberTempKData[i] = tmpVal;
                 else
-                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O//F " + oFRatio + " chamber temp could not be parsed as double; string is " + splitSection[1]);
+                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O/F " + oFRatio + " chamber temp could not be parsed as double; string is " + splitSection[1]);
 
                 //Nozzle Temperature
                 if (double.TryParse(splitSection[2], out tmpVal))
                     nozzleTempKData[i] = tmpVal;
                 else
-                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O//F " + oFRatio + " nozzle temp could not be parsed as double; string is " + splitSection[2]);
+                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O/F " + oFRatio + " nozzle temp could not be parsed as double; string is " + splitSection[2]);
 
                 //Nozzle Pressure
                 if (double.TryParse(splitSection[3], out tmpVal))
                     nozzlePresMPaData[i] = tmpVal;
                 else
-                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O//F " + oFRatio + " nozzle pres could not be parsed as double; string is " + splitSection[3]);
+                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O/F " + oFRatio + " nozzle pres could not be parsed as double; string is " + splitSection[3]);
 
                 //Nozzle MW
                 if (double.TryParse(splitSection[4], out tmpVal))
                     nozzleMolWeightgMolData[i] = tmpVal;
                 else
-                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O//F " + oFRatio + " nozzle MW could not be parsed as double; string is " + splitSection[4]);
+                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O/F " + oFRatio + " nozzle MW could not be parsed as double; string is " + splitSection[4]);
 
                 //Nozzle Gamma
                 if (double.TryParse(splitSection[5], out tmpVal))
                     nozzleGammaData[i] = tmpVal;
                 else
-                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O//F " + oFRatio + " nozzle gamma could not be parsed as double; string is " + splitSection[5]);
+                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O/F " + oFRatio + " nozzle gamma could not be parsed as double; string is " + splitSection[5]);
 
                 //Nozzle Mach
                 if (double.TryParse(splitSection[6], out tmpVal))
                     nozzleMachData[i] = tmpVal;
                 else
-                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O//F " + oFRatio + " nozzle Mach could not be parsed as double; string is " + splitSection[6]);
+                    Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O/F " + oFRatio + " nozzle Mach could not be parsed as double; string is " + splitSection[6]);
+
+                if(hasCpData)
+                {
+                    //Chamber Cp
+                    if (double.TryParse(splitSection[7], out tmpVal))
+                        chamberCpData[i] = tmpVal * 1000.0;
+                    else
+                        Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O/F " + oFRatio + " chamber Cp could not be parsed as double; string is " + splitSection[7]);
+                    //Nozzle Cp
+                    if (double.TryParse(splitSection[8], out tmpVal))
+                        nozzleCpData[i] = tmpVal * 1000.0;
+                    else
+                        Debug.LogError("[ProcEngines] Error: Row " + i + " for " + mixtureName + " at O/F " + oFRatio + " nozzle Cp could not be parsed as double; string is " + splitSection[8]);
+                }
+                else
+                {
+                    double approxIdealCp = nozzleGammaData[i] / (nozzleGammaData[i] - 1.0) * GAS_CONSTANT / nozzleMolWeightgMolData[i];
+                    chamberCpData[i] = nozzleCpData[i] = approxIdealCp;
+                }
             }
 
             minChamPres = chamberPresMPaData[0];
@@ -129,6 +180,9 @@ namespace ProcEngines
             prefab.nozzleMWgMol = 0;
             prefab.nozzleGamma = 0;
             prefab.nozzleMach = 0;
+            prefab.chamberCp = 0;
+            prefab.nozzleCp = 0;
+            prefab.frozenAreaRatio = frozenAreaRatio;
 
             if (inputChamberPres < minChamPres)
             {
@@ -158,6 +212,8 @@ namespace ProcEngines
                 prefab.nozzleMWgMol = (nozzleMolWeightgMolData[i] - nozzleMolWeightgMolData[i - 1]) * indexFactor + nozzleMolWeightgMolData[i - 1];
                 prefab.nozzleGamma = (nozzleGammaData[i] - nozzleGammaData[i - 1]) * indexFactor + nozzleGammaData[i - 1];
                 prefab.nozzleMach = (nozzleMachData[i] - nozzleMachData[i - 1]) * indexFactor + nozzleMachData[i - 1];
+                prefab.chamberCp = (chamberCpData[i] - chamberCpData[i - 1]) * indexFactor + chamberCpData[i - 1];
+                prefab.nozzleCp = (nozzleCpData[i] - nozzleCpData[i - 1]) * indexFactor + nozzleCpData[i - 1];
 
                 break;
             }

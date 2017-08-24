@@ -23,7 +23,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace ProcEngines
+namespace ProcEngines.PropellantConfig
 {
     public class BiPropellantConfig
     {
@@ -33,13 +33,42 @@ namespace ProcEngines
             get { return mixtureTitle; }
         }
         double frozenAreaRatio;
+        public double FrozenAreaRatio
+        {
+            get { return frozenAreaRatio; }
+        }
+        
         double chamberOFLimitLean;
         double chamberOFLimitRich;
+
+        public double ChamberOFLimitLean
+        {
+            get { return chamberOFLimitLean; }
+        }
+        public double ChamberOFLimitRich
+        {
+            get { return chamberOFLimitRich; }
+        }
+
+        double chamberPresLimLow;
+        double chamberPresLimHigh;
+
+        public double ChamberPresLimLow
+        {
+            get { return chamberPresLimLow; }
+        }
+        public double ChamberPresLimHigh
+        {
+            get { return chamberPresLimHigh; }
+        }
 
         PartResourceDefinition oxidizer;
         PartResourceDefinition fuel;
         string oxidizerString;
         string fuelString;
+        public PartResourceDefinition Oxidizer { get { return oxidizer; } }
+        public PartResourceDefinition Fuel { get { return fuel; } }
+
 
         BiPropMixtureRatioData[] mixtureData;
         double[] mixtureOFRatios;
@@ -65,18 +94,20 @@ namespace ProcEngines
 
             for (int i = 0; i < mixtureDataNodes.Length; ++i)
             {
-                mixtureData[i] = new BiPropMixtureRatioData(mixtureDataNodes[i], mixtureTitle);
+                mixtureData[i] = new BiPropMixtureRatioData(mixtureDataNodes[i], mixtureTitle, frozenAreaRatio);
                 mixtureOFRatios[i] = mixtureData[i].OFRatio;
             }
+            chamberPresLimLow = mixtureData[0].MinChamPres;
+            chamberPresLimHigh = mixtureData[0].MaxChamPres * 0.5;
         }
 
         public double GetOxDensity()
         {
-            return oxidizer.density;
+            return oxidizer.density * 1000.0;   //convert from t/L to t/m^3
         }
         public double GetFuelDensity()
         {
-            return fuel.density;
+            return fuel.density * 1000.0;   //convert from t/L to t/m^3
         }
 
         public EngineDataPrefab CalcPrefabData(double oFRatio, double chamberPres)
@@ -123,20 +154,37 @@ namespace ProcEngines
         
         public EngineDataPrefab CalcDataAtPresAndTemp(double combustorPressure, double turbineInletTemp, bool oxRich)
         {
-            //if(oxRich)      //start at the higher OF ratios and count down
-            //{
-            //
-            //}
-            //else
-            //{
-                EngineDataPrefab prefab2 = mixtureData[0].CalcData(combustorPressure);
+            if(oxRich)      //start at the higher OF ratios and count down
+            {
+                EngineDataPrefab prefab1 = mixtureData[mixtureData.Length - 1].CalcData(combustorPressure);
+                for (int i = mixtureData.Length - 2; i >= 0; --i)
+                {
+                    EngineDataPrefab prefab2 = mixtureData[i].CalcData(combustorPressure);
+
+                    if (prefab2.chamberTempK < turbineInletTemp)        //if prefab2 (closer to stoich) is too low, then we're not hot enough yet.
+                    {                                                   //switch prefab1 to be prefab2 and calc a new prefab2 that is hopefully hotter than the temp we want
+                        prefab1 = prefab2;
+                        continue;
+                    }
+                    double indexFactor = turbineInletTemp - prefab2.chamberTempK;
+                    indexFactor /= (prefab1.chamberTempK - prefab2.chamberTempK);        //this gives us a pseudo-index factor that can be used to calculate properties between the input data
+
+                    double desiredOF = (prefab1.OFRatio - prefab2.OFRatio) * indexFactor + prefab2.OFRatio;
+
+                    EngineDataPrefab results = (prefab1 - prefab2) * indexFactor + prefab2;
+                    return results;
+                }            
+            }
+            else
+            {
+                EngineDataPrefab prefab1 = mixtureData[0].CalcData(combustorPressure);
                 for (int i = 1; i < mixtureData.Length; ++i)
                 {
-                    EngineDataPrefab prefab1 = mixtureData[i].CalcData(combustorPressure);
+                    EngineDataPrefab prefab2 = mixtureData[i].CalcData(combustorPressure);
 
-                    if (prefab1.chamberTempK < turbineInletTemp)
+                    if (prefab2.chamberTempK < turbineInletTemp)
                     {
-                        prefab2 = prefab1;
+                        prefab1 = prefab2;
                         continue;
                     }
                     double indexFactor = turbineInletTemp - prefab1.chamberTempK;
@@ -144,9 +192,10 @@ namespace ProcEngines
 
                     double desiredOF = (prefab2.OFRatio - prefab1.OFRatio) * indexFactor + prefab1.OFRatio;
 
-                    return CalcPrefabData(desiredOF, combustorPressure, i - 1);
+                    EngineDataPrefab results = (prefab2 - prefab1) * indexFactor + prefab1;
+                    return results;
                 }
-            //}
+            }
 
             Debug.LogError("[ProcEngines] Error in data tables, could not solve");
 
@@ -168,8 +217,8 @@ namespace ProcEngines
             oxString = biPropConfig.GetValue("oxidizer");
             fuelString = biPropConfig.GetValue("fuel");
 
-            valid &= PartResourceLibrary.Instance.GetDefinition(oxString) == null;
-            valid &= PartResourceLibrary.Instance.GetDefinition(fuelString) == null;
+            valid &= PartResourceLibrary.Instance.GetDefinition(oxString) != null;
+            valid &= PartResourceLibrary.Instance.GetDefinition(fuelString) != null;
 
             if (!valid)
                 return false;
